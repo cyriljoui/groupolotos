@@ -11,10 +11,10 @@ class PlayerController {
     static allowedMethods = [save: "POST", update: "PUT", delete: "DELETE"]
 
     def index(Integer max) {
-        params.max = Math.min(max ?: 6, 100)
-        params.sort = params.sort?:"firstname"
-        params.order = params.order?:"asc"
-        respond Player.list(params), model: [playerInstanceCount: Player.count()]
+        params.max = Math.min(max ?: 24, 100)
+        params.sort = params.sort ?: "firstname"
+        params.order = params.order ?: "asc"
+        respond Player.findAllByDeleted(false, params), model: [playerInstanceCount: Player.countByDeleted(false)]
     }
 
     def show(Player playerInstance) {
@@ -32,7 +32,7 @@ class PlayerController {
         Player player = Player.get(params.id)
         if (player) {
 
-            if (player.current != 0D){
+            if (player.current != 0D) {
                 // todo envoyer un mail
             }
 
@@ -41,6 +41,25 @@ class PlayerController {
         }
 
         redirect action: 'index'
+        return
+    }
+
+    @Secured(['ROLE_ADMIN'])
+    @Transactional
+    def redistributeOldCash (){
+        def eileo = Bank.findByName ("Eileo")
+        def players = Player.findAllByDeleted(false)
+
+        def amount = eileo.leftOver / players.size()
+        players.each {player ->
+            player.current += amount
+            player.save()
+        }
+
+        eileo.leftOver = 0
+        eileo.save(flush: true)
+
+        redirect controller: 'session', action: 'index'
         return
     }
 
@@ -104,7 +123,15 @@ class PlayerController {
             return
         }
 
-        playerInstance.delete flush: true
+        // en dur pour le moment.
+        def eileo = Bank.findByName ("Eileo")
+        eileo.leftOver += playerInstance.current
+        eileo.save(flush: true)
+
+        // effacement virtuel
+        playerInstance.deleted = true
+        playerInstance.current = 0
+        playerInstance.save(flush: true)
 
         request.withFormat {
             form multipartForm {
@@ -113,6 +140,29 @@ class PlayerController {
             }
             '*' { render status: NO_CONTENT }
         }
+    }
+
+    @Secured(['ROLE_ADMIN'])
+    @Transactional
+    def addmoney() {
+
+        def player = Player.get(params.playerId)
+        if (!player) {
+            redirect action: 'index'
+            return
+        }
+
+        def currentCurrent = player.current
+        bindData(player, params, [include: ["current", "automationForNextGame"]])
+        player.current += currentCurrent
+        player.save flush: true
+
+        if (params.redirection) {
+            redirect controller: 'session', action: 'show', id: params.sessionId
+        } else {
+            redirect action: 'index'
+        }
+        return
     }
 
     protected void notFound() {

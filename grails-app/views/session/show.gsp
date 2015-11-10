@@ -78,16 +78,58 @@
                                 </g:link>
                             </g:if>
                             <g:else>
-                                <g:link class="btn btn-warning btn-xs" action="open" controller="session"
-                                        id="${sessionInstance.id}"><span
-                                        class="glyphicon glyphicon-play"></span>
-                                    <g:message code="session.open"/>
-                                </g:link>
+                                <div class="btn-group">
+                                    <g:link class="btn btn-warning btn-xs" action="open" controller="session"
+                                            id="${sessionInstance.id}"><span
+                                            class="glyphicon glyphicon-play"></span>
+                                        <g:message code="session.open"/>
+                                    </g:link>
+
+                                    <g:link class="btn btn-success btn-xs" controller="session" action="mailforclose"
+                                            id="${sessionInstance.id}">
+                                        <span
+                                                class="glyphicon glyphicon-phone"></span>
+                                        <g:message code="warn.close"/>
+                                    </g:link>
+
+                                </div>
                             </g:else>
                         </g:if>
                     </sec:ifAllGranted>
                 </td>
             </tr>
+            <tr>
+                <td><strong><g:message code="session.ticket.label"
+                                       default="Ticket"/></strong></td>
+                <td><g:if test="${sessionInstance.proofTicket}">
+                    <g:link controller="session" action="downloadticket" id="${sessionInstance.id}">
+                        <span class="glyphicon glyphicon-download"></span>
+                        <g:message code="session.download.label"/>
+                    </g:link>
+                </g:if>
+                    <g:else>
+                        <i><g:message code="session.noticket.todownload"/></i>
+                    </g:else>
+                </td>
+                <td>
+                    <sec:ifAllGranted roles="ROLE_ADMIN">
+                        <g:uploadForm action="uploadticket" class="pull-right">
+                            <input id="ticket" type="file" class="file" name="ticket" data-show-preview="false"
+                                   data-show-upload="false" data-show-caption="false">
+                            <input type="submit" class="btn btn-xs btn-success"/>
+                            <g:hiddenField name="sessionId" value="${sessionInstance.id}"/>
+                        </g:uploadForm>
+
+                    </sec:ifAllGranted>
+                </td>
+            </tr>
+            <tr>
+                <td><strong><g:message code="session.total.bet.label"
+                                       default="Bet"/></strong></td>
+                <td><g:formatNumber number="${sessionInstance?.totalBet}" currencyCode="EUR" type="currency"/></td>
+                <td></td>
+            </tr>
+
             <tr>
                 <td><strong><g:message code="session.gains.label"
                                        default="Gains"/></strong></td>
@@ -111,7 +153,8 @@
                                     <g:message code="session.gains"/>
                                 </button>
 
-                                <g:link class="btn btn-success btn-xs" controller="session" action="mailforgains" id="${sessionInstance.id}">
+                                <g:link class="btn btn-success btn-xs" controller="session" action="mailforgains"
+                                        id="${sessionInstance.id}">
                                     <span class="glyphicon glyphicon-phone-alt"></span> <g:message code="warn.gains"/>
                                 </g:link>
 
@@ -134,9 +177,14 @@
         </div>
 
         <table class="table">
-            <g:each in="${sessionInstance.players}" var="player">
+            <g:each in="${sessionInstance.players.sort({ it.firstname })}" var="player">
                 <tr>
-                    <td>${player.firstname} ${player.lastname}</td>
+                    <sec:ifAllGranted roles="ROLE_ADMIN">
+                        <td>${player.firstname} ${player.lastname}</td>
+                    </sec:ifAllGranted>
+                    <sec:ifNotGranted roles="ROLE_ADMIN">
+                        <td>${player.firstname} ${player.lastname.substring(0, 1)}.</td>
+                    </sec:ifNotGranted>
                     <sec:ifAllGranted roles="ROLE_ADMIN">
                         <td>${player.email}</td>
                     </sec:ifAllGranted>
@@ -186,7 +234,7 @@
 
             <g:set var="size" value="${allPlayers?.size()}"/>
             <g:set var="counter" value="${0}"/>
-            <g:each in="${allPlayers}" var="player" status="index">
+            <g:each in="${allPlayers.sort({ it.firstname })}" var="player" status="index">
                 <g:if test="${counter == 0}">
                     <div class="row-fluid">
                 </g:if>
@@ -206,8 +254,9 @@
                                                 <span class="glyphicon glyphicon-menu-left"></span> <strong>${player.firstname} ${player.lastname}</strong>
                                             </g:link>
                                         </li>
+                                        <li class="list-group-item">En-cours : <g:formatNumber
+                                                number="${player.current}" type="currency" currencyCode="EUR"/></li>
                                         <li class="list-group-item">
-
                                             <g:if test="${player.current < 2}">
                                                 Pour jouer : <g:formatNumber
                                                     number="${2 - player.current}" type="currency" currencyCode="EUR"/>
@@ -216,6 +265,20 @@
                                                 En-cours suffisant
                                             </g:else>
                                         </li>
+                                        <sec:ifAllGranted roles="ROLE_ADMIN">
+                                            <li class="list-group-item">
+
+                                                <div class="btn-group" role="group">
+                                                    <button type="button" class="btn btn-success toggleAddMoneyModal"
+                                                            data-toggle="modal"
+                                                            data-target="#addMoneyModal"
+                                                            data-player-id="${player.id}" data-redirect-to="session" data-session-id="${sessionInstance.id}">
+                                                        <span class="glyphicon glyphicon-plus"></span>
+                                                        <span class="glyphicon glyphicon-euro"></span>
+                                                    </button>
+                                                </div>
+                                            </li>
+                                        </sec:ifAllGranted>
                                     </ul>
 
                                 </g:if>
@@ -231,7 +294,17 @@
                             <sec:ifNotGranted roles="ROLE_ADMIN">
                                 <ul class="list-group">
                                     <li class="list-group-item list-group-item-info">
-                                        <strong>${player.firstname} ${player.lastname}</strong>
+                                        <strong>${player.firstname} ${player.lastname.substring(0, 1)}.</strong>
+                                    </li>
+                                    <li class="list-group-item">
+
+                                        <g:if test="${player.current < 2}">
+                                            Pour jouer : <g:formatNumber
+                                                number="${2 - player.current}" type="currency" currencyCode="EUR"/>
+                                        </g:if>
+                                        <g:else>
+                                            En-cours suffisant
+                                        </g:else>
                                     </li>
                                 </ul>
                             </sec:ifNotGranted>
@@ -254,6 +327,16 @@
 </div>
 
 <g:render template="savegains"/>
+<g:render template="/player/addmoney"/>
+<jq:jquery>
+
+    $(".toggleAddMoneyModal").on('click', function () {
+        $("#modalPlayerId").val($(this).attr ("data-player-id"));
+        $("#redirection").val ($(this).attr("data-redirect-to"));
+        $("#modalSessionId").val($(this).attr("data-session-id"));
+    });
+
+</jq:jquery>
 
 </body>
 </html>

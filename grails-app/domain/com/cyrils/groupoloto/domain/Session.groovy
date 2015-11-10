@@ -10,11 +10,14 @@ class Session {
 
     Date date = new Date()
     Boolean open = true
+    byte[] proofTicket
     Double gains = 0D;
 
     static constraints = {
         date nullable: false
         open nullable: false
+        // Limit upload file size to 5MB
+        proofTicket maxSize: 1024 * 1024 * 5, nullable:true
         gains nullable: false
         name nullable: false
     }
@@ -25,4 +28,8 @@ class Session {
 
     Date dateCreated
     Date lastUpdated
+
+    def getTotalBet (){
+        return players.size() * 2
+    }
 }

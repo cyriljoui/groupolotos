@@ -31,32 +31,69 @@ class SessionController {
             }
         }
 
-        def c3 = Player.createCriteria()
-        def bank = c3.get {
-            projections {
-                sum "current"
+        def bank = Player.executeQuery('select sum(p.current) from Player p where p.deleted = false')[0]
+
+        // If bank is null, nothing to compute
+        if (bank != null) {
+            def sessions = Session.findAllByOpen(true)
+            sessions.each { session ->
+                bank += session.totalBet
             }
         }
 
         def playersCount = Session.executeQuery(
                 'select count(p.id) from Session s join s.players p')[0]
 
+        def group = Bank.findByName("Eileo")
+
         def graphResult = Session.executeQuery(
-                'select s.name, count(p) * 2, s.gains from Session s join s.players p group by s.name, s.gains, s.date order by s.date asc',
-                [max: 10, offset: 0]
-        )
+                'select s.name, count(p) * 2, s.gains from Session s left join s.players p group by s.name, s.gains, s.date order by s.date desc', [max: 10]
+        ).reverse()
 
         respond Session.list(params), model: [sessionInstanceCount: Session.count(),
                                               totalGains          : gainsSum,
                                               totalSum            : playersCount * 2,
                                               avgGains            : gainsAvg,
                                               graphData           : graphResult,
-                                              bank                : bank]
+                                              bank                : bank,
+                                              group               : group]
+    }
+
+    @Transactional
+    @Secured(['ROLE_ADMIN'])
+    def uploadticket() {
+        def session = Session.get(params.sessionId)
+        if (session) {
+
+            def file = request.getFile("ticket")
+            session.proofTicket = file.getBytes()
+
+            session.save flush: true
+            redirect action: 'show', id: session.id
+            return
+        }
+
+        redirect action: 'index'
+        return
+    }
+
+    def downloadticket() {
+        def session = Session.get(params.id)
+        if (session) {
+
+            response.setContentType("application/octet-stream")
+            // or or image/JPEG or text/xml or whatever type the file is
+            response.setHeader("Content-disposition", "attachment;filename=\"${session.name}_ticket.pdf\"")
+            response.outputStream << session.proofTicket
+            return
+        }
+        redirect action: 'index'
+        return
     }
 
     def show(Session sessionInstance) {
 
-        def allPlayers = Player.findAll();
+        def allPlayers = Player.findAllByDeleted(false);
         allPlayers.removeAll(sessionInstance.players)
 
         [sessionInstance: sessionInstance, allPlayers: allPlayers]
@@ -183,6 +220,16 @@ class SessionController {
             return
         }
 
+        // chercher les joueurs qui ont "Rejoindre auto"
+        def players = Player.findAllByAutomationForNextGameGreaterThan(0);
+        if (players) {
+            players.each { autoPlayer ->
+                sessionInstance.addToPlayers(autoPlayer)
+                autoPlayer.automationForNextGame -= 1;
+                autoPlayer.current -= 2;
+            }
+        }
+
         sessionInstance.save flush: true
 
         request.withFormat {
@@ -217,7 +264,7 @@ class SessionController {
     @Secured(['ROLE_ADMIN'])
     def mailwarneveryone() {
         Session session = Session.get(params.id)
-        def emails = Player.executeQuery("select p.email from Player p")
+        def emails = Player.executeQuery("select p.email from Player p where p.deleted = false")
 
         if (!session || !emails) {
             redirect(action: 'index')
@@ -227,7 +274,8 @@ class SessionController {
         render view: '/mail/mail', model: [template: 'everyone', emails: emails, sessionInstance: session]
     }
 
-    def mailforgains (){
+    @Secured(['ROLE_ADMIN'])
+    def mailforgains() {
         Session session = Session.get(params.id)
         def emails = session.players*.email
 
@@ -237,6 +285,19 @@ class SessionController {
         }
 
         render view: '/mail/mail', model: [template: 'gains', emails: emails, sessionInstance: session]
+    }
+
+    @Secured(['ROLE_ADMIN'])
+    def mailforclose() {
+        Session session = Session.get(params.id)
+        def emails = session.players*.email
+
+        if (!session || !emails) {
+            redirect(action: 'index')
+            return
+        }
+
+        render view: '/mail/mail', model: [template: 'closesession', emails: emails, sessionInstance: session]
     }
 
     protected void notFound() {
